@@ -5,7 +5,6 @@ import { Field, Form, FormSpy } from 'react-final-form'
 import {
   Condition,
   RFFCFormInput,
-  RFFCFormRadio,
   RFFCFormRadioList,
   RFFCFormSwitch,
   RFFSelectSearch,
@@ -18,15 +17,15 @@ import {
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { faCircleNotch, faEdit, faEye } from '@fortawesome/free-solid-svg-icons'
 import { CippContentCard, CippPage, CippPageList } from 'src/components/layout'
-import { CellTip } from 'src/components/tables/CellGenericFormat'
+import { CellTip, cellGenericFormatter } from 'src/components/tables/CellGenericFormat'
 import 'react-datepicker/dist/react-datepicker.css'
-import { CippActionsOffcanvas, ModalService, TenantSelector } from 'src/components/utilities'
+import { TenantSelector } from 'src/components/utilities'
 import arrayMutators from 'final-form-arrays'
 import DatePicker from 'react-datepicker'
 import 'react-datepicker/dist/react-datepicker.css'
 import { useListUsersQuery } from 'src/store/api/users'
-import { useListConditionalAccessPoliciesQuery } from 'src/store/api/tenants'
 import GDAPRoles from 'src/data/GDAPRoles'
+import { CippDatatable, cellDateFormatter } from 'src/components/tables'
 
 const DeployJITAdmin = () => {
   const [ExecuteGetRequest, getResults] = useLazyGenericGetRequestQuery()
@@ -42,12 +41,22 @@ const DeployJITAdmin = () => {
     const startTime = Math.floor(startDate.getTime() / 1000)
     const endTime = Math.floor(endDate.getTime() / 1000)
     const shippedValues = {
-      tenantFilter: tenantDomain,
+      TenantFilter: tenantDomain,
       UserId: values.UserId?.value,
-      PolicyId: values.PolicyId?.value,
+      UserPrincipalName: values.UserPrincipalName,
+      FirstName: values.FirstName,
+      LastName: values.LastName,
+      useraction: values.useraction,
+      AdminRoles: values.AdminRoles?.map((role) => role.value),
       StartDate: startTime,
+      UseTAP: values.useTap,
       EndDate: endTime,
-      ExpireAction: values?.expireAction ?? 'delete',
+      ExpireAction: values.expireAction.value,
+      PostExecution: {
+        Webhook: values.webhook,
+        Email: values.email,
+        PSA: values.psa,
+      },
     }
     genericPostRequest({ path: '/api/ExecJITAdmin', values: shippedValues }).then((res) => {
       setRefreshState(res.requestId)
@@ -58,13 +67,23 @@ const DeployJITAdmin = () => {
     data: users = [],
     isFetching: usersIsFetching,
     error: usersError,
-  } = useListUsersQuery({ tenantDomain })
+  } = useGenericGetRequestQuery({
+    path: '/api/ListGraphRequest',
+    params: {
+      TenantFilter: tenantDomain,
+      Endpoint: 'users',
+      $select: 'id,displayName,userPrincipalName,accountEnabled',
+      $count: true,
+      $top: 999,
+      $orderby: 'displayName',
+    },
+  })
 
   return (
     <CippPage title={`Add JIT Admin`} tenantSelector={false}>
       <>
-        <CRow>
-          <CCol md={4}>
+        <CRow className="mb-3">
+          <CCol lg={4} md={12}>
             <CippContentCard title="Add JIT Admin" icon={faEdit}>
               <Form
                 onSubmit={onSubmit}
@@ -81,7 +100,9 @@ const DeployJITAdmin = () => {
                       <CRow className="mb-3">
                         <CCol>
                           <label className="mb-2">Tenant</label>
-                          <Field name="tenantFilter">{(props) => <TenantSelector />}</Field>
+                          <Field name="tenantFilter">
+                            {(props) => <TenantSelector showAllTenantSelector={false} />}
+                          </Field>
                         </CCol>
                       </CRow>
                       <CRow>
@@ -102,7 +123,17 @@ const DeployJITAdmin = () => {
                         </CCol>
                       </CRow>
                       <Condition when="useraction" is="create">
-                        <CRow className="mb-3">
+                        <CRow>
+                          <CCol>
+                            <RFFCFormInput label="First Name" name="FirstName" />
+                          </CCol>
+                        </CRow>
+                        <CRow>
+                          <CCol>
+                            <RFFCFormInput label="Last Name" name="LastName" />
+                          </CCol>
+                        </CRow>
+                        <CRow>
                           <CCol>
                             <RFFCFormInput label="User Principal Name" name="UserPrincipalName" />
                           </CCol>
@@ -113,7 +144,7 @@ const DeployJITAdmin = () => {
                           <CCol>
                             <RFFSelectSearch
                               label={'Users in ' + tenantDomain}
-                              values={users?.map((user) => ({
+                              values={users?.Results?.map((user) => ({
                                 value: user.id,
                                 name: `${user.displayName} <${user.userPrincipalName}>`,
                               }))}
@@ -121,9 +152,27 @@ const DeployJITAdmin = () => {
                               name="UserId"
                               isLoading={usersIsFetching}
                             />
+                            <FormSpy subscription={{ values: true }}>
+                              {({ values }) => {
+                                return users?.Results?.map((user, key) => {
+                                  if (
+                                    user.id === values?.UserId?.value &&
+                                    user.accountEnabled === false
+                                  ) {
+                                    return (
+                                      <CCallout color="warning" key={key} className="mt-3">
+                                        This user is currently disabled, they will automatically be
+                                        enabled when JIT is executed.
+                                      </CCallout>
+                                    )
+                                  }
+                                })
+                              }}
+                            </FormSpy>
                           </CCol>
                         </CRow>
                       </Condition>
+                      <hr />
                       <CRow className="mb-3">
                         <CCol>
                           <RFFSelectSearch
@@ -169,13 +218,30 @@ const DeployJITAdmin = () => {
                           <RFFSelectSearch
                             label="Expiration Action"
                             values={[
-                              { value: 'removeroles', name: 'Remove Admin Roles' },
-                              { value: 'disable', name: 'Disable' },
-                              { value: 'delete', name: 'Delete' },
+                              { value: 'RemoveRoles', name: 'Remove Admin Roles' },
+                              { value: 'DisableUser', name: 'Disable User' },
+                              { value: 'DeleteUser', name: 'Delete User' },
                             ]}
                             placeholder="Select action for when JIT expires"
                             name="expireAction"
                           />
+                        </CCol>
+                      </CRow>
+                      <CRow className="mb-3">
+                        <CCol>
+                          <CTooltip content="Generate a Temporary Access Password for the JIT Admin account if enabled for the tenant. This applies to both New and Existing users. The start time coincides with the scheduled time.">
+                            <div>
+                              <RFFCFormSwitch name="useTap" label="Generate TAP" />
+                            </div>
+                          </CTooltip>
+                        </CCol>
+                      </CRow>
+                      <CRow className="mb-3">
+                        <CCol>
+                          <label>Send results to</label>
+                          <RFFCFormSwitch name="webhook" label="Webhook" />
+                          <RFFCFormSwitch name="email" label="E-mail" />
+                          <RFFCFormSwitch name="psa" label="PSA" />
                         </CCol>
                       </CRow>
                       <CRow className="mb-3">
@@ -195,7 +261,9 @@ const DeployJITAdmin = () => {
                       </CRow>
                       {postResults.isSuccess && (
                         <CCallout color="success">
-                          <li>{postResults.data.Results}</li>
+                          {postResults.data?.Results.map((result, idx) => (
+                            <li key={idx}>{result}</li>
+                          ))}
                         </CCallout>
                       )}
                       {getResults.isFetching && (
@@ -214,6 +282,52 @@ const DeployJITAdmin = () => {
                     </CForm>
                   )
                 }}
+              />
+            </CippContentCard>
+          </CCol>
+          <CCol lg={8} md={12}>
+            <CippContentCard title="JIT Admins" icon="user-shield">
+              <CippDatatable
+                title="JIT Admins"
+                path="/api/ExecJITAdmin?Action=List"
+                params={{ TenantFilter: tenantDomain, refreshState }}
+                columns={[
+                  {
+                    name: 'User',
+                    selector: (row) => row['userPrincipalName'],
+                    sortable: true,
+                    cell: cellGenericFormatter(),
+                    exportSelector: 'userPrincipalName',
+                  },
+                  {
+                    name: 'Account Enabled',
+                    selector: (row) => row['accountEnabled'],
+                    sortable: true,
+                    cell: cellGenericFormatter(),
+                    exportSelector: 'accountEnabled',
+                  },
+                  {
+                    name: 'JIT Enabled',
+                    selector: (row) => row['jitAdminEnabled'],
+                    sortable: true,
+                    cell: cellGenericFormatter(),
+                    exportSelector: 'jitAdminEnabled',
+                  },
+                  {
+                    name: 'JIT Expires',
+                    selector: (row) => row['jitAdminExpiration'],
+                    sortable: true,
+                    cell: cellDateFormatter({ format: 'short' }),
+                    exportSelector: 'jitAdminExpiration',
+                  },
+                  {
+                    name: 'Admin Roles',
+                    selector: (row) => row['memberOf'],
+                    sortable: false,
+                    cell: cellGenericFormatter(),
+                    exportSelector: 'memberOf',
+                  },
+                ]}
               />
             </CippContentCard>
           </CCol>

@@ -10,7 +10,7 @@ import {
   CTabContent,
   CTabPane,
 } from '@coreui/react'
-import { CippPage } from 'src/components/layout'
+import { CippCallout, CippPage } from 'src/components/layout'
 import { CippLazy } from 'src/components/utilities'
 import { useNavigate } from 'react-router-dom'
 import useQuery from 'src/hooks/useQuery.jsx'
@@ -42,15 +42,15 @@ export default function CIPPExtensions() {
     })
   }
 
-  const ButtonGenerate = (integrationType, forceSync) => (
+  const ButtonGenerate = (integrationType, forceSync, disabled) => (
     <>
-      <CButton className="me-2" form={integrationType} type="submit">
+      <CButton disabled={disabled} className="me-2" form={integrationType} type="submit">
         {extensionConfigResult.isFetching && (
           <FontAwesomeIcon icon={faCircleNotch} spin className="me-2" size="1x" />
         )}
         Set Extension Settings
       </CButton>
-      <CButton onClick={() => onSubmitTest(integrationType)} className="me-2">
+      <CButton disabled={disabled} onClick={() => onSubmitTest(integrationType)} className="me-2">
         {listExtensionTestResult.isFetching && (
           <FontAwesomeIcon icon={faCircleNotch} spin className="me-2" size="1x" />
         )}
@@ -83,6 +83,7 @@ export default function CIPPExtensions() {
     queryString.set('tab', tab.toString())
     navigate(`${location.pathname}?${queryString}`)
   }
+  const hostedMetaContent = document.querySelector('meta[name="hosted"]')?.getAttribute('content')
 
   return (
     <CippPage title="Settings" tenantSelector={false}>
@@ -104,12 +105,22 @@ export default function CIPPExtensions() {
           <CTabPane key={`pane-${idx}`} visible={active === idx} className="mt-3">
             <CippLazy visible={active === idx}>
               <CRow className="mb-3">
-                <CCol md={4}>
+                <CCol sm={12} md={integration.mappingRequired ? 4 : 12} className="mb-3">
+                  {hostedMetaContent === 'true' && integration.disableWhenhosted && (
+                    <CippCallout color="warning">
+                      This extension requires activation in the management portal for hosted
+                      clients.
+                    </CippCallout>
+                  )}
                   <CippButtonCard
                     title={integration.name}
                     titleType="big"
                     isFetching={listBackendResult.isFetching}
-                    CardButton={ButtonGenerate(integration.type, integration.forceSync)}
+                    CardButton={ButtonGenerate(
+                      integration.type,
+                      integration.forceSync,
+                      (hostedMetaContent === 'true' && integration.disableWhenhosted) || false,
+                    )}
                     key={idx}
                   >
                     <p>{integration.helpText}</p>
@@ -158,9 +169,29 @@ export default function CIPPExtensions() {
                         )
                       }}
                     />
+                    {extensionConfigResult?.data?.Results && (
+                      <CippCallout color={extensionConfigResult.isSuccess ? 'success' : 'danger'}>
+                        {extensionConfigResult?.data?.Results}
+                      </CippCallout>
+                    )}
+                    {listExtensionTestResult?.data?.Results && (
+                      <CippCallout color={listExtensionTestResult.isSuccess ? 'success' : 'danger'}>
+                        {listExtensionTestResult?.data?.Results}
+                        {listExtensionTestResult?.data?.Link && (
+                          <a
+                            href={listExtensionTestResult?.data?.Link}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="ms-2"
+                          >
+                            Link
+                          </a>
+                        )}
+                      </CippCallout>
+                    )}
                   </CippButtonCard>
                 </CCol>
-                <CCol md={8}>
+                <CCol sm={12} md={8}>
                   <SettingsExtensionMappings type={integration.type} />
                 </CCol>
               </CRow>
