@@ -1,6 +1,10 @@
 {
-    "recommendations": [
-        "editorconfig.editorconfig",
-        "streetsidesoftware.code-spell-checker",
-    ]
+  "recommendations": [
+    "github.vscode-codeql",
+    "dbaeumer.vscode-eslint",
+    "christian-kohler.npm-intellisense",
+    "esbenp.prettier-vscode",
+    "stylelint.vscode-stylelint",
+    "editorconfig.editorconfig"
+  ]
 }
